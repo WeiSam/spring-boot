@@ -19,6 +19,7 @@ package org.springframework.boot.loader;
 import org.springframework.boot.loader.archive.Archive;
 
 /**
+ * SpringBoot的jar包启动类
  * {@link Launcher} for JAR based archives. This launcher assumes that dependency jars are
  * included inside a {@code /BOOT-INF/lib} directory and that application classes are
  * included inside a {@code /BOOT-INF/classes} directory.

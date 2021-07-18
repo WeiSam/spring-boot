@@ -195,10 +195,14 @@ public class SpringApplication {
 
 	private static final Log logger = LogFactory.getLog(SpringApplication.class);
 
+	/**
+	 * 启动时,执行SpringApplication.run(CloudSample.class, args),传入的类
+	 */
 	private Set<Class<?>> primarySources;
 
 	private Set<String> sources = new LinkedHashSet<>();
 
+	//保存主启动类
 	private Class<?> mainApplicationClass;
 
 	private Banner.Mode bannerMode = Banner.Mode.CONSOLE;
@@ -254,6 +258,25 @@ public class SpringApplication {
 	}
 
 	/**
+	 * 获取主启动类
+	 * @return
+	 */
+	private Class<?> deduceMainApplicationClass() {
+		try {
+			StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
+			for (StackTraceElement stackTraceElement : stackTrace) {
+				if ("main".equals(stackTraceElement.getMethodName())) {
+					return Class.forName(stackTraceElement.getClassName());
+				}
+			}
+		}
+		catch (ClassNotFoundException ex) {
+			// Swallow and continue
+		}
+		return null;
+	}
+
+	/**
 	 * Create a new {@link SpringApplication} instance. The application context will load
 	 * beans from the specified primary sources (see {@link SpringApplication class-level}
 	 * documentation for details. The instance can be customized before calling
@@ -271,22 +294,8 @@ public class SpringApplication {
 		this.webApplicationType = WebApplicationType.deduceFromClasspath();
 		setInitializers((Collection) getSpringFactoriesInstances(ApplicationContextInitializer.class));
 		setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+		//获取主启动类,用于打印日志
 		this.mainApplicationClass = deduceMainApplicationClass();
-	}
-
-	private Class<?> deduceMainApplicationClass() {
-		try {
-			StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
-			for (StackTraceElement stackTraceElement : stackTrace) {
-				if ("main".equals(stackTraceElement.getMethodName())) {
-					return Class.forName(stackTraceElement.getClassName());
-				}
-			}
-		}
-		catch (ClassNotFoundException ex) {
-			// Swallow and continue
-		}
-		return null;
 	}
 
 	/**
@@ -296,29 +305,42 @@ public class SpringApplication {
 	 * @return a running {@link ApplicationContext}
 	 */
 	public ConfigurableApplicationContext run(String... args) {
+		//主要统计启动时长
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 		ConfigurableApplicationContext context = null;
 		Collection<SpringBootExceptionReporter> exceptionReporters = new ArrayList<>();
+		//配置系统SYSTEM_PROPERTY_JAVA_AWT_HEADLESS属性
 		configureHeadlessProperty();
+		//获取SpringApplicationRunListener类型数组
 		SpringApplicationRunListeners listeners = getRunListeners(args);
+		//启动监听-启动中
 		listeners.starting();
 		try {
 			ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+			//加载属性配置
 			ConfigurableEnvironment environment = prepareEnvironment(listeners, applicationArguments);
 			configureIgnoreBeanInfo(environment);
+			//打印banner信息
 			Banner printedBanner = printBanner(environment);
+			//创建Spring容器
 			context = createApplicationContext();
+			//获取SpringBootExceptionReporter实现类,主要记录发生异常时信息
 			exceptionReporters = getSpringFactoriesInstances(SpringBootExceptionReporter.class,
 					new Class[] { ConfigurableApplicationContext.class }, context);
+			//初始化spring容器
 			prepareContext(context, environment, listeners, applicationArguments, printedBanner);
+			//刷新spring容器
 			refreshContext(context);
+			//完成spring刷新后置处理
 			afterRefresh(context, applicationArguments);
 			stopWatch.stop();
 			if (this.logStartupInfo) {
 				new StartupInfoLogger(this.mainApplicationClass).logStarted(getApplicationLog(), stopWatch);
 			}
+			//启动
 			listeners.started(context);
+			//调用ApplicationRunner和CommandLineRunner的run方法
 			callRunners(context, applicationArguments);
 		}
 		catch (Throwable ex) {
@@ -327,6 +349,7 @@ public class SpringApplication {
 		}
 
 		try {
+			//运行中
 			listeners.running(context);
 		}
 		catch (Throwable ex) {
@@ -363,12 +386,25 @@ public class SpringApplication {
 		}
 	}
 
+	/**
+	 * 初始化spring容器属性,加载bean定义等
+	 * @param context
+	 * @param environment
+	 * @param listeners
+	 * @param applicationArguments
+	 * @param printedBanner
+	 */
 	private void prepareContext(ConfigurableApplicationContext context, ConfigurableEnvironment environment,
 			SpringApplicationRunListeners listeners, ApplicationArguments applicationArguments, Banner printedBanner) {
+		//设置environment属性
 		context.setEnvironment(environment);
+		//设置容器一些属性
 		postProcessApplicationContext(context);
+		//初始化ApplicationContextInitializer
 		applyInitializers(context);
+		//通知SpringApplicationRunListener,spring容器准备完成
 		listeners.contextPrepared(context);
+		//打印日志
 		if (this.logStartupInfo) {
 			logStartupInfo(context.getParent() == null);
 			logStartupProfileInfo(context);
@@ -386,10 +422,13 @@ public class SpringApplication {
 		if (this.lazyInitialization) {
 			context.addBeanFactoryPostProcessor(new LazyInitializationBeanFactoryPostProcessor());
 		}
+		//获取主子主资源类,不可变集合
 		// Load the sources
 		Set<Object> sources = getAllSources();
 		Assert.notEmpty(sources, "Sources must not be empty");
+		//加载bean定义
 		load(context, sources.toArray(new Object[0]));
+		//通知通知SpringApplicationRunListener,bean定义加载完成
 		listeners.contextLoaded(context);
 	}
 
@@ -420,8 +459,17 @@ public class SpringApplication {
 		return getSpringFactoriesInstances(type, new Class<?>[] {});
 	}
 
+	/**
+	 * 获取接口类型下META-INF/spring.factories指定类型的实现类,反射创建
+	 * @param type
+	 * @param parameterTypes
+	 * @param args
+	 * @param <T>
+	 * @return
+	 */
 	private <T> Collection<T> getSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes, Object... args) {
 		ClassLoader classLoader = getClassLoader();
+		//加载指定类型对应的，在 `META-INF/spring.factories` 里的类名的数组
 		// Use names and ensure unique to protect against duplicates
 		Set<String> names = new LinkedHashSet<>(SpringFactoriesLoader.loadFactoryNames(type, classLoader));
 		List<T> instances = createSpringFactoriesInstances(type, parameterTypes, classLoader, args, names);
@@ -429,6 +477,16 @@ public class SpringApplication {
 		return instances;
 	}
 
+	/**
+	 * 通过反射创建全路径类名的实例
+	 * @param type
+	 * @param parameterTypes
+	 * @param classLoader
+	 * @param args
+	 * @param names 全路径类名
+	 * @param <T>
+	 * @return
+	 */
 	@SuppressWarnings("unchecked")
 	private <T> List<T> createSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes,
 			ClassLoader classLoader, Object[] args, Set<String> names) {
@@ -678,6 +736,7 @@ public class SpringApplication {
 		if (logger.isDebugEnabled()) {
 			logger.debug("Loading source " + StringUtils.arrayToCommaDelimitedString(sources));
 		}
+		//创建springboot的bean定义加载器
 		BeanDefinitionLoader loader = createBeanDefinitionLoader(getBeanDefinitionRegistry(context), sources);
 		if (this.beanNameGenerator != null) {
 			loader.setBeanNameGenerator(this.beanNameGenerator);
@@ -1111,6 +1170,7 @@ public class SpringApplication {
 	}
 
 	/**
+	 * 获取启动时,执行SpringApplication.run(CloudSample.class, args),传入的类和一些其他主资源类,不可变资源
 	 * Return an immutable set of all the sources that will be added to an
 	 * ApplicationContext when {@link #run(String...)} is called. This method combines any
 	 * primary sources specified in the constructor with any additional ones that have

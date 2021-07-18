@@ -46,8 +46,11 @@ public abstract class Launcher {
 	 * @throws Exception if the application fails to launch
 	 */
 	protected void launch(String[] args) throws Exception {
+		//TODO:注册URL协议处理器,使得springboot可以加载jar包,主要能加载内嵌的jar包???
 		JarFile.registerUrlProtocolHandler();
+		//创建类加载器
 		ClassLoader classLoader = createClassLoader(getClassPathArchives());
+		//启动
 		launch(args, getMainClass(), classLoader);
 	}
 

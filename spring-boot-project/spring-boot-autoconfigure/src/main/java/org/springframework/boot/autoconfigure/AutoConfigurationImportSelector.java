@@ -101,6 +101,7 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 	}
 
 	/**
+	 * SPI 获取 合格的 EnableAutoConfiguration 自动配置类
 	 * Return the {@link AutoConfigurationEntry} based on the {@link AnnotationMetadata}
 	 * of the importing {@link Configuration @Configuration} class.
 	 * @param autoConfigurationMetadata the auto-configuration metadata
@@ -112,14 +113,27 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 		if (!isEnabled(annotationMetadata)) {
 			return EMPTY_ENTRY;
 		}
+		//获取注解元数据的属性
 		AnnotationAttributes attributes = getAttributes(annotationMetadata);
+		//SPI 获取项目中META-INF/spring.factories所有 EnableAutoConfiguration 实现配置的bean名称
 		List<String> configurations = getCandidateConfigurations(annotationMetadata, attributes);
+		//去除重复项
 		configurations = removeDuplicates(configurations);
+		//获取需要排除的自动配置类,根据用户配置 EnableAutoConfiguration,SpringBootApplication 可指定
 		Set<String> exclusions = getExclusions(annotationMetadata, attributes);
 		checkExcludedClasses(configurations, exclusions);
+		//移除需要排除的
 		configurations.removeAll(exclusions);
+		/**
+		 * 根据SPI
+		 * 1.根据AutoConfigurationImportFilter ,自定义过滤逻辑,根据过滤逻辑进行过滤
+		 * 2.根据autoConfigurationMetadata进行过滤,
+		 * 	@see AutoConfigurationMetadataLoader.loadMetadata(this.beanClassLoader);
+		 */
 		configurations = filter(configurations, autoConfigurationMetadata);
+		// SPI AutoConfigurationImportListener 自动配置监听回调
 		fireAutoConfigurationImportEvents(configurations, exclusions);
+		//封装需要的自动配置的类并返回
 		return new AutoConfigurationEntry(configurations, exclusions);
 	}
 
@@ -159,6 +173,7 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 	}
 
 	/**
+	 * 获取META-INF/spring.factories下的EnableAutoConfiguration配置的实现类
 	 * Return the auto-configuration class names that should be considered. By default
 	 * this method will load candidates using {@link SpringFactoriesLoader} with
 	 * {@link #getSpringFactoriesLoaderFactoryClass()}.
@@ -241,6 +256,11 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 		String[] candidates = StringUtils.toStringArray(configurations);
 		boolean[] skip = new boolean[candidates.length];
 		boolean skipped = false;
+		//# SPI Auto Configuration Import Filters
+		//org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=\
+		//org.springframework.boot.autoconfigure.condition.OnBeanCondition,\
+		//org.springframework.boot.autoconfigure.condition.OnClassCondition,\
+		//org.springframework.boot.autoconfigure.condition.OnWebApplicationCondition
 		for (AutoConfigurationImportFilter filter : getAutoConfigurationImportFilters()) {
 			invokeAwareMethods(filter);
 			boolean[] match = filter.match(candidates, autoConfigurationMetadata);
@@ -386,12 +406,20 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 			this.resourceLoader = resourceLoader;
 		}
 
+
+		/**
+		 * SpringBoot中自动配置核心方法
+		 * 1.首先执行该方法,收集筛选后的自动配置类bean信息
+		 * @param annotationMetadata
+		 * @param deferredImportSelector
+		 */
 		@Override
 		public void process(AnnotationMetadata annotationMetadata, DeferredImportSelector deferredImportSelector) {
 			Assert.state(deferredImportSelector instanceof AutoConfigurationImportSelector,
 					() -> String.format("Only %s implementations are supported, got %s",
 							AutoConfigurationImportSelector.class.getSimpleName(),
 							deferredImportSelector.getClass().getName()));
+			//getAutoConfigurationMetadata() 获取META-INF/spring-autoconfigure-metadata.properties下配置,判断是否符合条件
 			AutoConfigurationEntry autoConfigurationEntry = ((AutoConfigurationImportSelector) deferredImportSelector)
 					.getAutoConfigurationEntry(getAutoConfigurationMetadata(), annotationMetadata);
 			this.autoConfigurationEntries.add(autoConfigurationEntry);
@@ -400,6 +428,11 @@ public class AutoConfigurationImportSelector implements DeferredImportSelector, 
 			}
 		}
 
+		/**
+		 * 根据挑选后的自动配置类,进行排序,并封装成
+		 * @see Entry 集合返回
+		 * @return
+		 */
 		@Override
 		public Iterable<Entry> selectImports() {
 			if (this.autoConfigurationEntries.isEmpty()) {
